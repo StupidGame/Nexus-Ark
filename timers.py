@@ -132,7 +132,10 @@ class UnifiedTimer:
                 # ログヘッダーを新しい形式 `ROLE:NAME` に準拠させる
                 message_for_log = f"（システムタイマー：{theme}）"
                 utils.save_message_to_log(log_f, "## SYSTEM:timer", message_for_log)
-                utils.save_message_to_log(log_f, f"## AGENT:{self.room_name}", raw_response)
+                sanitized_log_text, suppressed_log = utils.sanitize_for_display(raw_response)
+                if suppressed_log and not sanitized_log_text.strip():
+                    sanitized_log_text = "思考中..."
+                utils.save_message_to_log(log_f, f"## AGENT:{self.room_name}", sanitized_log_text)
 
                 alarm_manager.send_notification(self.room_name, response_text, {})
 

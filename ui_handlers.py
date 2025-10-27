@@ -596,12 +596,21 @@ def _stream_and_handle_response(
                         elif isinstance(msg, ToolMessage):
                             content_to_log = utils.format_tool_result_for_ui(msg.name, str(msg.content)) or f"ツール「{msg.name}」を実行しました。"
                             header = f"## SYSTEM:tool_result"
-                            all_turn_popups.append(content_to_log)
                         
-                        if header and content_to_log:
+                        if content_to_log:
+                            sanitized_log_text, suppressed_log = utils.sanitize_for_display(content_to_log)
+                            if suppressed_log and not sanitized_log_text.strip():
+                                sanitized_log_text = "思考中..."
+                        else:
+                            sanitized_log_text, suppressed_log = "", False
+
+                        if header and sanitized_log_text:
                             for participant_room in all_rooms_in_scene:
                                 log_f, _, _, _, _ = get_room_files_paths(participant_room)
-                                if log_f: utils.save_message_to_log(log_f, header, content_to_log)
+                                if log_f: utils.save_message_to_log(log_f, header, sanitized_log_text)
+
+                        if header == "## SYSTEM:tool_result" and sanitized_log_text:
+                            all_turn_popups.append(sanitized_log_text)
                 
                 # --- 表示処理 ---
                 text_to_display = ""
@@ -1655,10 +1664,16 @@ def format_history_for_gradio(
             content = timestamp_pattern.sub('', content)
 
         text_part = re.sub(r"\[(?:Generated Image|ファイル添付):.*?\]", "", content, flags=re.DOTALL).strip()
+        sanitized_text = text_part
+        suppressed_thinking = False
+        if text_part:
+            sanitized_text, suppressed_thinking = utils.sanitize_for_display(text_part)
+            if suppressed_thinking and not sanitized_text.strip():
+                sanitized_text = "思考中..."
         media_matches = list(re.finditer(r"\[(?:Generated Image|ファイル添付): ([^\]]+?)\]", content))
 
-        if text_part or (role == "SYSTEM" and not media_matches):
-            proto_history.append({"type": "text", "role": role, "responder": responder_id, "content": text_part, "log_index": i})
+        if sanitized_text or (role == "SYSTEM" and not media_matches):
+            proto_history.append({"type": "text", "role": role, "responder": responder_id, "content": sanitized_text, "log_index": i})
 
         for match in media_matches:
             path_str = match.group(1).strip()
@@ -1685,7 +1700,7 @@ def format_history_for_gradio(
             else:
                 print(f"--- [警告] 無効または安全でない画像パスをスキップしました: {path_str} ---")
 
-        if not text_part and not media_matches and role != "SYSTEM":
+        if not sanitized_text and not media_matches and role != "SYSTEM":
              proto_history.append({"type": "text", "role": role, "responder": responder_id, "content": "", "log_index": i})
 
     for item in proto_history:

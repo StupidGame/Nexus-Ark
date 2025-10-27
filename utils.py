@@ -239,6 +239,8 @@ def sanitize_for_display(text: str, placeholder: str = "思考中...") -> Tuple[
         re.compile(r"<\s*(?:thinking|thought|reasoning)\s*>[\s\S]*?<\s*/\s*(?:thinking|thought|reasoning)\s*>", re.IGNORECASE),
         re.compile(r"\[\s*(?:thinking|thought|reasoning)\s*\][\s\S]*?\[\s*/\s*(?:thinking|thought|reasoning)\s*\]", re.IGNORECASE),
         re.compile(r"�yThoughts�z[\s\S]*?�y/Thoughts�z", re.IGNORECASE),
+        re.compile(r"【\s*(?:thinking|thought|思考)\s*】[\s\S]*?【\s*/\s*(?:thinking|thought|思考)\s*】", re.IGNORECASE),
+        re.compile(r"＜\s*(?:thinking|thought|思考)\s*＞[\s\S]*?＜\s*/\s*(?:thinking|thought|思考)\s*＞", re.IGNORECASE),
     ]
 
     for pattern in block_patterns:
@@ -273,13 +275,27 @@ def sanitize_for_display(text: str, placeholder: str = "思考中...") -> Tuple[
         "INTERNAL THOUGHT:",
         "INTERNAL_THOUGHT:",
         "CHAIN-OF-THOUGHT:",
+        "思考:",
+        "思考：",
+        "考察:",
+        "考察：",
+        "内心:",
+        "内心：",
+        "内部思考:",
+        "内部思考：",
     )
+    normalized_prefixes = [(prefix, prefix.upper().replace("：", ":")) for prefix in thinking_prefixes]
     thinking_markers = (
         "[THINKING]",
         "[THOUGHT]",
         "[REASONING]",
         "[INTERNAL THOUGHT]",
         "[INTERNAL_THOUGHT]",
+        "[思考]",
+        "【思考】",
+        "＜思考＞",
+        "（思考）",
+        "(思考)",
     )
 
     placeholder_stripped = placeholder.strip()
@@ -295,8 +311,16 @@ def sanitize_for_display(text: str, placeholder: str = "思考中...") -> Tuple[
                     processed_lines.append(placeholder)
             continue
 
-        matched_prefix = next((prefix for prefix in thinking_prefixes if upper.startswith(prefix)), None)
+        normalized_line = upper.replace("：", ":")
+        matched_prefix = next((original for original, normalized_prefix in normalized_prefixes if normalized_line.startswith(normalized_prefix)), None)
         if matched_prefix:
+            suppressed = True
+            if placeholder:
+                if not processed_lines or processed_lines[-1].strip() != placeholder_stripped:
+                    processed_lines.append(placeholder)
+            continue
+
+        if re.match(r"^[（(]\s*(?:思考|内心|考察)\s*[）)]", stripped):
             suppressed = True
             if placeholder:
                 if not processed_lines or processed_lines[-1].strip() != placeholder_stripped:

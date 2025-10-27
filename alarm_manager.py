@@ -188,7 +188,10 @@ def trigger_alarm(alarm_config, current_api_key_name):
     if response_text and not response_text.startswith("[エラー"):
         # ログヘッダーを新しい形式 `ROLE:NAME` に準拠させる
         utils.save_message_to_log(log_f, "## SYSTEM:alarm", message_for_log)
-        utils.save_message_to_log(log_f, f"## AGENT:{room_name}", raw_response)
+        sanitized_log_text, suppressed_log = utils.sanitize_for_display(raw_response)
+        if suppressed_log and not sanitized_log_text.strip():
+            sanitized_log_text = "思考中..."
+        utils.save_message_to_log(log_f, f"## AGENT:{room_name}", sanitized_log_text)
         print(f"アラームログ記録完了 (ID:{alarm_id})")
         send_notification(room_name, response_text, alarm_config)
         if PLYER_AVAILABLE:
