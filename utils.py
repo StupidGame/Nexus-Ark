@@ -5,7 +5,7 @@ import os
 import re
 import traceback
 import html
-from typing import List, Dict, Optional, Tuple, Union
+from typing import List, Dict, Optional, Tuple, Union, Any
 import constants
 import sys
 import psutil
@@ -333,6 +333,64 @@ def sanitize_for_display(text: str, placeholder: str = "思考中...") -> Tuple[
     sanitized = re.sub(r"\n{3,}", "\n\n", sanitized)
 
     return sanitized.strip(), suppressed
+
+THOUGHT_CONTENT_TYPES = {
+    "internal_thought",
+    "thought",
+    "thinking",
+    "reasoning",
+    "chain_of_thought",
+    "chain-of-thought",
+    "cot",
+    "analysis",
+    "planning",
+}
+
+def _flatten_message_content(content: Any) -> str:
+    """
+    Convert LangChain-style message content into a plain text string while
+    ignoring known internal-thought entries.
+    """
+    def _extract(item: Any) -> str:
+        if item is None:
+            return ""
+        if isinstance(item, str):
+            return item
+        if isinstance(item, dict):
+            item_type = str(item.get("type") or item.get("role") or "").lower()
+            if item_type in THOUGHT_CONTENT_TYPES:
+                return ""
+            if "text" in item and isinstance(item["text"], str):
+                return item["text"]
+            if "content" in item and isinstance(item["content"], str):
+                return item["content"]
+            if "value" in item and isinstance(item["value"], str):
+                return item["value"]
+            return ""
+        text_attr = getattr(item, "text", None)
+        if isinstance(text_attr, str):
+            return text_attr
+        content_attr = getattr(item, "content", None)
+        if isinstance(content_attr, str):
+            return content_attr
+        return str(item)
+
+    if isinstance(content, list):
+        parts = [_extract(part) for part in content]
+        return "\n".join(part for part in parts if part)
+
+    return _extract(content)
+
+def extract_visible_text_from_content(content: Any, placeholder: str = "思考中...") -> Tuple[str, bool]:
+    """
+    Flatten complex message content into displayable text and sanitize out internal thoughts.
+    """
+    flattened = _flatten_message_content(content)
+    if not flattened:
+        return "", False
+    sanitized_text, suppressed = sanitize_for_display(flattened, placeholder=placeholder)
+    sanitized_text = re.sub(r"\n{3,}", "\n\n", sanitized_text).strip()
+    return sanitized_text, suppressed
 
 def remove_thoughts_from_text(text: str) -> str:
     """Remove THINKING/THOUGHT annotations from text for TTS and logging."""

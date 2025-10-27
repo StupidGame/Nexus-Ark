@@ -587,65 +587,56 @@ def _stream_and_handle_response(
                 # --- 応答の記録 ---
                 # このAIが生成した全てのメッセージを、参加者全員のログに書き込む
                 for msg in new_messages:
-                    if isinstance(msg, (AIMessage, ToolMessage)):
-                        content_to_log = ""
-                        header = ""
-                        if isinstance(msg, AIMessage) and msg.content and msg.content.strip():
-                            content_to_log = msg.content
+                    if isinstance(msg, AIMessage):
+                        visible_text, _ = utils.extract_visible_text_from_content(msg.content, placeholder="")
+                        if visible_text:
                             header = f"## AGENT:{current_room}"
-                        elif isinstance(msg, ToolMessage):
-                            content_to_log = utils.format_tool_result_for_ui(msg.name, str(msg.content)) or f"ツール「{msg.name}」を実行しました。"
-                            header = f"## SYSTEM:tool_result"
-                        
-                        if content_to_log:
-                            sanitized_log_text, suppressed_log = utils.sanitize_for_display(content_to_log)
-                            if suppressed_log and not sanitized_log_text.strip():
-                                sanitized_log_text = "思考中..."
-                        else:
-                            sanitized_log_text, suppressed_log = "", False
-
-                        if header and sanitized_log_text:
                             for participant_room in all_rooms_in_scene:
                                 log_f, _, _, _, _ = get_room_files_paths(participant_room)
-                                if log_f: utils.save_message_to_log(log_f, header, sanitized_log_text)
-
-                        if header == "## SYSTEM:tool_result" and sanitized_log_text:
-                            all_turn_popups.append(sanitized_log_text)
+                                if log_f: utils.save_message_to_log(log_f, header, visible_text)
+                    elif isinstance(msg, ToolMessage):
+                        tool_text = utils.format_tool_result_for_ui(msg.name, str(msg.content)) or f"ツール「{msg.name}」を実行しました。"
+                        if tool_text:
+                            clean_tool_text, _ = utils.extract_visible_text_from_content(tool_text, placeholder="")
+                            clean_tool_text = clean_tool_text.strip()
+                            if clean_tool_text:
+                                header = f"## SYSTEM:tool_result"
+                                for participant_room in all_rooms_in_scene:
+                                    log_f, _, _, _, _ = get_room_files_paths(participant_room)
+                                    if log_f: utils.save_message_to_log(log_f, header, clean_tool_text)
+                                all_turn_popups.append(clean_tool_text)
                 
                 # --- 表示処理 ---
-                text_to_display = ""
-                if has_tool_calls_in_turn:
-                    text_to_display = last_ai_message.content if last_ai_message else ""
-                else:
-                    all_ai_contents = [msg.content for msg in new_messages if isinstance(msg, AIMessage) and msg.content and isinstance(msg.content, str)]
-                    text_to_display = "\n\n".join(all_ai_contents)
-
-                sanitized_text = ""
+                visible_segments: List[str] = []
                 suppressed_thinking = False
-                if isinstance(text_to_display, str):
-                    sanitized_text, suppressed_thinking = utils.sanitize_for_display(text_to_display)
-                elif text_to_display:
-                    sanitized_text = str(text_to_display)
 
-                if suppressed_thinking and not sanitized_text.strip():
-                    sanitized_text = "思考中..."
-
-                if sanitized_text and sanitized_text.strip():
-                    if enable_typewriter_effect and streaming_speed > 0:
-                        streamed_text = ""
-                        for char in sanitized_text:
-                            streamed_text += char
-                            chatbot_history[-1] = (None, streamed_text + "▌")
-                            yield (chatbot_history, mapping_list, *([gr.update()] * 12))
-                            time.sleep(streaming_speed)
-                    else:
-                        streamed_text = sanitized_text
+                if has_tool_calls_in_turn and last_ai_message:
+                    segment_text, suppressed = utils.extract_visible_text_from_content(last_ai_message.content, placeholder="")
+                    if segment_text:
+                        visible_segments.append(segment_text)
+                    suppressed_thinking = suppressed_thinking or suppressed
                 else:
-                    streamed_text = sanitized_text
-                
-                # ストリーミング完了後、最終的なテキストで一度更新
-                chatbot_history[-1] = (None, streamed_text)
-                yield (chatbot_history, mapping_list, *([gr.update()] * 12))
+                    for msg in new_messages:
+                        if isinstance(msg, AIMessage):
+                            segment_text, suppressed = utils.extract_visible_text_from_content(msg.content, placeholder="")
+                            if segment_text:
+                                visible_segments.append(segment_text)
+                            suppressed_thinking = suppressed_thinking or suppressed
+
+                final_display_text = "\n\n".join(visible_segments).strip()
+                if not final_display_text:
+                    continue
+
+                if enable_typewriter_effect and streaming_speed > 0 and not suppressed_thinking:
+                    streamed_text = ""
+                    for char in final_display_text:
+                        streamed_text += char
+                        chatbot_history[-1] = (None, streamed_text + "▌")
+                        yield (chatbot_history, mapping_list, *([gr.update()] * 12))
+                        time.sleep(streaming_speed)
+                else:
+                    chatbot_history[-1] = (None, final_display_text)
+                    yield (chatbot_history, mapping_list, *([gr.update()] * 12))
 
             # --- UIの再描画と確定 ---
             # このAIのターンが完了したので、ログから完全に再描画して表示を「確定」させる
@@ -1664,12 +1655,11 @@ def format_history_for_gradio(
             content = timestamp_pattern.sub('', content)
 
         text_part = re.sub(r"\[(?:Generated Image|ファイル添付):.*?\]", "", content, flags=re.DOTALL).strip()
-        sanitized_text = text_part
+        sanitized_text = ""
         suppressed_thinking = False
         if text_part:
-            sanitized_text, suppressed_thinking = utils.sanitize_for_display(text_part)
-            if suppressed_thinking and not sanitized_text.strip():
-                sanitized_text = "思考中..."
+            sanitized_text, suppressed_thinking = utils.sanitize_for_display(text_part, placeholder="")
+            sanitized_text = sanitized_text.strip()
         media_matches = list(re.finditer(r"\[(?:Generated Image|ファイル添付): ([^\]]+?)\]", content))
 
         if sanitized_text or (role == "SYSTEM" and not media_matches):

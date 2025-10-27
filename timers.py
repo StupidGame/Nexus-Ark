@@ -118,11 +118,13 @@ class UnifiedTimer:
 
             if final_state:
                 new_messages = final_state["messages"][initial_message_count:]
-                all_ai_contents = [
-                    msg.content for msg in new_messages
-                    if isinstance(msg, AIMessage) and msg.content and isinstance(msg.content, str)
-                ]
-                final_response_text = "\n\n".join(all_ai_contents).strip()
+                visible_segments = []
+                for msg in new_messages:
+                    if isinstance(msg, AIMessage):
+                        segment_text, _ = utils.extract_visible_text_from_content(msg.content, placeholder="")
+                        if segment_text:
+                            visible_segments.append(segment_text)
+                final_response_text = "\n\n".join(visible_segments).strip()
             # ▲▲▲【置き換えはここまで】▲▲▲
 
             raw_response = final_response_text
@@ -132,10 +134,10 @@ class UnifiedTimer:
                 # ログヘッダーを新しい形式 `ROLE:NAME` に準拠させる
                 message_for_log = f"（システムタイマー：{theme}）"
                 utils.save_message_to_log(log_f, "## SYSTEM:timer", message_for_log)
-                sanitized_log_text, suppressed_log = utils.sanitize_for_display(raw_response)
-                if suppressed_log and not sanitized_log_text.strip():
-                    sanitized_log_text = "思考中..."
-                utils.save_message_to_log(log_f, f"## AGENT:{self.room_name}", sanitized_log_text)
+                sanitized_log_text, _ = utils.sanitize_for_display(raw_response, placeholder="")
+                sanitized_log_text = sanitized_log_text.strip()
+                if sanitized_log_text:
+                    utils.save_message_to_log(log_f, f"## AGENT:{self.room_name}", sanitized_log_text)
 
                 alarm_manager.send_notification(self.room_name, response_text, {})
 

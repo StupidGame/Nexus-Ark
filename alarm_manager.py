@@ -172,12 +172,14 @@ def trigger_alarm(alarm_config, current_api_key_name):
     if final_state:
         # 新しく追加されたメッセージ（AIの応答）のみを抽出
         new_messages = final_state["messages"][initial_message_count:]
-        # AIMessageのcontentをすべて結合する
-        all_ai_contents = [
-            msg.content for msg in new_messages
-            if isinstance(msg, AIMessage) and msg.content and isinstance(msg.content, str)
-        ]
-        final_response_text = "\n\n".join(all_ai_contents).strip()
+        # AIMessageのcontentを可視テキストに変換して結合する
+        visible_segments = []
+        for msg in new_messages:
+            if isinstance(msg, AIMessage):
+                segment_text, _ = utils.extract_visible_text_from_content(msg.content, placeholder="")
+                if segment_text:
+                    visible_segments.append(segment_text)
+        final_response_text = "\n\n".join(visible_segments).strip()
     # ▲▲▲【置き換えはここまで】▲▲▲
 
     # 思考ログを含む完全な応答を raw_response とする（ログ記録用）
@@ -188,10 +190,10 @@ def trigger_alarm(alarm_config, current_api_key_name):
     if response_text and not response_text.startswith("[エラー"):
         # ログヘッダーを新しい形式 `ROLE:NAME` に準拠させる
         utils.save_message_to_log(log_f, "## SYSTEM:alarm", message_for_log)
-        sanitized_log_text, suppressed_log = utils.sanitize_for_display(raw_response)
-        if suppressed_log and not sanitized_log_text.strip():
-            sanitized_log_text = "思考中..."
-        utils.save_message_to_log(log_f, f"## AGENT:{room_name}", sanitized_log_text)
+        sanitized_log_text, _ = utils.sanitize_for_display(raw_response, placeholder="")
+        sanitized_log_text = sanitized_log_text.strip()
+        if sanitized_log_text:
+            utils.save_message_to_log(log_f, f"## AGENT:{room_name}", sanitized_log_text)
         print(f"アラームログ記録完了 (ID:{alarm_id})")
         send_notification(room_name, response_text, alarm_config)
         if PLYER_AVAILABLE:
