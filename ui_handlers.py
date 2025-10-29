@@ -181,7 +181,7 @@ def _update_chat_tab_for_room_change(room_name: str, api_key_name: str):
 
     return (
         room_name, chat_history, mapping_list,
-        gr.update(interactive=True, placeholder="メッセージを入力してください (Enterで送信 / Shift+Enterで改行)。添付するにはファイルをドロップまたはクリップボタンを押してください..."),
+        gr.update(interactive=True, placeholder="メッセージを入力してください (Shift+Enterで送信)。添付するにはファイルをドロップまたはクリップボタンを押してください..."),
         profile_image,
         memory_str, notepad_content, load_system_prompt_content(room_name),
         core_memory_content,
@@ -611,28 +611,15 @@ def _stream_and_handle_response(
                     all_ai_contents = [msg.content for msg in new_messages if isinstance(msg, AIMessage) and msg.content and isinstance(msg.content, str)]
                     text_to_display = "\n\n".join(all_ai_contents)
 
-                sanitized_text = ""
-                suppressed_thinking = False
-                if isinstance(text_to_display, str):
-                    sanitized_text, suppressed_thinking = utils.sanitize_for_display(text_to_display)
-                elif text_to_display:
-                    sanitized_text = str(text_to_display)
-
-                if suppressed_thinking and not sanitized_text.strip():
-                    sanitized_text = "思考中..."
-
-                if sanitized_text and sanitized_text.strip():
+                if text_to_display and text_to_display.strip():
                     if enable_typewriter_effect and streaming_speed > 0:
-                        streamed_text = ""
-                        for char in sanitized_text:
+                        for char in text_to_display:
                             streamed_text += char
                             chatbot_history[-1] = (None, streamed_text + "▌")
                             yield (chatbot_history, mapping_list, *([gr.update()] * 12))
                             time.sleep(streaming_speed)
                     else:
-                        streamed_text = sanitized_text
-                else:
-                    streamed_text = sanitized_text
+                        streamed_text = text_to_display
                 
                 # ストリーミング完了後、最終的なテキストで一度更新
                 chatbot_history[-1] = (None, streamed_text)
